@@ -35,4 +35,10 @@ FindDMAddy
 
 FindPid
 
+how to build:
+
+* clone this repo
+* explore src in command line.
+* run ndk-build
+
 inplementation: https://www.youtube.com/watch?v=O4B3t2-67jc&t=7s
