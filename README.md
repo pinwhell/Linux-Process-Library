@@ -2,6 +2,7 @@
 android process/memory library root
 
 Library Features:​
+
 LoadToMemoryAndHook (will a passed function(should be simple function or shellcode))
 
 Hook
@@ -34,3 +35,4 @@ FindDMAddy
 
 FindPid
 
+inplementation: https://www.youtube.com/watch?v=O4B3t2-67jc&t=7s
