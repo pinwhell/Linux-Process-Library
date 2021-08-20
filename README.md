@@ -12,14 +12,23 @@ Library Features:​
 *GetFuncSizeArm
 
 *FindCodeCave
+
 *EnumSegments
+
 *FindExternalSymbol (parse the elf header and find for symbols)
+
 *memcpyBackwrd (target to local)
+
 *memcpy (local to target)
+
 *GetFullModulePath
+
 *GetLocalModBaseAddr
+
 *GetModBaseAddr
+
 *WriteProcessMemory
+
 *ReadProcessMemory
 *FindDMAddy
 *FindPid
