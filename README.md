@@ -1,7 +1,7 @@
 # Android-External-Memory-Hacking
 android process/memory library root
 
-Library Features:​
+Library Features:
 
 * LoadToMemoryAndHook (will a passed function(should be simple function or shellcode))
 * Hook
