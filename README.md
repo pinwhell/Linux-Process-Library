@@ -1,4 +1,4 @@
-# Android-External-Memory-Hacking
+# Emulator-Android-External-Memory-Hacking
 android process/memory library root
 
 Library Features:
