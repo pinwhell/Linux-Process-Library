@@ -108,7 +108,7 @@ bool GetMapsBuffer(int fd, std::string & result)
     printf("GetMapsBuffer(%d)\n",fd);
     #endif
 
-    lseek(fd, 0, SEEK_SET);
+    lseek64(fd, 0, SEEK_SET);
     FILE* tmpf = fdopen(fd, "r");
     if(!tmpf)
         return false;

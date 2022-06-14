@@ -212,24 +212,24 @@ template<typename T>
 T ProcessManager::ReadProcessMemory(uintptr_t addr)
 {
     T result;
-    lseek(memfd, addr, SEEK_SET);
+    lseek64(memfd, addr, SEEK_SET);
 
     if(!read(memfd, &result, sizeof(result)))
         printf("ProcessManager : could not read the memory");
 
-    lseek(memfd, 0, SEEK_SET);
+    lseek64(memfd, 0, SEEK_SET);
     return result;
 }
 
 template<typename T>
 void ProcessManager::WriteProcessMemory(uintptr_t addr, T newValue)
 {
-    lseek(memfd, addr, SEEK_SET);
+    lseek64(memfd, addr, SEEK_SET);
 
     if(!write(memfd, &newValue, sizeof(T)))
         printf("ProcessManager : could not write the memory");
 
-    lseek(memfd, 0, SEEK_SET);
+    lseek64(memfd, 0, SEEK_SET);
 }
 
 
