@@ -1,0 +1,9 @@
+
+src/obj/local/arm64-v8a/objs/mem/main.o
+src/obj/local/arm64-v8a/objs/mem/main.o.d
+*.o
+*.d
+src/obj/local/armeabi-v7a/mem
+src/obj/local/arm64-v8a/mem
+src/libs/armeabi-v7a/mem
+src/libs/arm64-v8a/mem
