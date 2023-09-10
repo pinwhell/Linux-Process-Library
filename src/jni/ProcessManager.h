@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
 
 #define READ 0
 #define READ_WRITE 1
@@ -84,7 +85,7 @@ public:
      * @return T target object return type from this function
      */
     template<typename T>
-    T ReadProcessMemory(uintptr_t addr);
+    T ReadMemoryWrapper(uintptr_t addr);
 
     /**
      * @brief solve multilevel pointers
@@ -103,7 +104,7 @@ public:
      * @param newValue target value to be write in target process memory
      */
     template<typename T>
-    void WriteProcessMemory(uintptr_t addr, T newValue);
+    void WriteMemoryWrapper(uintptr_t addr, T newValue);
 
     /**
      * @brief Get the Module Base Address of a module loaded in target process memory
@@ -138,7 +139,7 @@ public:
      * @param destination here is the destination point in target memory
      * @param size this is the count in bytes to be write
      */
-    void memcpy(unsigned char* source, uintptr_t destination, int size);
+    bool WriteMemory(const void* source, uintptr_t destination, int size);
 
     /**
      * @brief will copy data from target memory to local process memory
@@ -149,7 +150,7 @@ public:
      * @return true sucesfully copied
      * @return false error while copying
      */
-    bool memcpyBackwrd(uintptr_t source, unsigned char* destination, int size);
+    bool ReadMemory(uintptr_t source, void* destination, int size);
 
     /**
      * @brief will find for a symbol in target memory
@@ -165,26 +166,28 @@ public:
      * @brief it will enumerate/parse all segments from the maps file
      * 
      * @param segments this is a reference to a vector of segmentInfo struct
-     * @param prot this is the target protection, could be READ, READ_WRITE, EXECUTE_READ, READ_WRITE_EXECUTE
+     * @param protection this is the target protection, could be PROT_READ, PROT_WRITE, PROT_EXEC, Same as mmap
      * @return true sucessfully enumerate all the target proteccion segments
      * @return false an error ocurred while enumerating
      */
-    bool EnumSegments(std::vector<SegmentInfo> & segments, int prot);
+    bool EnumSegments(std::vector<SegmentInfo> & segments, int protection = PROT_READ | PROT_WRITE | PROT_EXEC);
 
     /**
      * @brief will find a piece of memory "empty" in the target process memory
      * 
      * @param size the target size of the "empty" memory
-     * @param prot the target memory proteccion, could be READ, READ_WRITE, EXECUTE_READ, READ_WRITE_EXECUTE
+     * @param prot the target memory proteccion, could be PROT_READ, PROT_WRITE, PROT_EXEC, Same as mmap
      * @return uintptr_t if success the returned address is not null
      */
-    uintptr_t FindCodeCave(uintptr_t size, uintptr_t prot);
+    uintptr_t FindCodeCave(uintptr_t size, uintptr_t protection = PROT_READ | PROT_WRITE | PROT_EXEC);
 
     /**
+     * @deprecated
      * @brief it will find and disable the ptrace function in the target process
      * 
      */
-    void DisablePtrace();
+    //void DisablePtrace();
+
 
     /**
      * @brief it will detour the execution flow in determinated target memory point
@@ -210,27 +213,19 @@ public:
 };
 
 template<typename T>
-T ProcessManager::ReadProcessMemory(uintptr_t addr)
+T ProcessManager::ReadMemoryWrapper(uintptr_t addr)
 {
     T result;
-    lseek64(memfd, addr, SEEK_SET);
+    
+    ReadMemory(addr, (void*)&result, sizeof(T));
 
-    if(!read(memfd, &result, sizeof(result)))
-        printf("ProcessManager : could not read the memory");
-
-    lseek64(memfd, 0, SEEK_SET);
     return result;
 }
 
 template<typename T>
-void ProcessManager::WriteProcessMemory(uintptr_t addr, T newValue)
+void ProcessManager::WriteMemoryWrapper(uintptr_t addr, T newValue)
 {
-    lseek64(memfd, addr, SEEK_SET);
-
-    if(!write(memfd, &newValue, sizeof(T)))
-        printf("ProcessManager : could not write the memory");
-
-    lseek64(memfd, 0, SEEK_SET);
+    WriteMemory((const void*)&newValue, addr, sizeof(T));
 }
 
 

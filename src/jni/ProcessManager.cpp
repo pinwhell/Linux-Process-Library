@@ -13,6 +13,28 @@ const unsigned char popmask[] = "\xBD\xE8";
 const unsigned char bxlrmask[] = "\x1E\xFF\x2F\xE1";
 const unsigned char parammask[] = "\xCC\xCC\xCC\xCC";
 
+const char* pattern_scan(const char* pattern, const char* mask, const char* data, size_t data_len) {
+    size_t mask_len = strlen(mask) - 1; // Subtract 1 to exclude the null terminator
+
+    for (size_t i = 0; i <= data_len - mask_len; i++) {
+        int match = 1;
+        for (size_t j = 0; j < mask_len; j++) {
+            if (mask[j] == '?') {
+                continue;
+            }
+            if (data[i + j] != pattern[j]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            return &data[i]; // Return the address where the pattern is found
+        }
+    }
+
+    return nullptr; // Pattern not found
+}
+
 #define GetBit(buff, pos) (((buff) & (0x1 << (pos)))) ? true : false
 
 /**
@@ -178,7 +200,7 @@ uintptr_t ProcessManager::FindDMAddy(uintptr_t base, std::vector<uintptr_t> offs
 
     for(int i = 0; i < offsets.size(); i++)
     {
-        result = ReadProcessMemory<uintptr_t>(result);
+        result = ReadMemoryWrapper<uintptr_t>(result);
         result += offsets[i];
     }
 
@@ -193,13 +215,18 @@ uintptr_t ProcessManager::GetLocalModBaseAddr(const char* modName)
 
     int localMapsfd = open("/proc/self/maps", O_RDONLY);
 
+    if(localMapsfd < 0)
+        return 0;
+
     SegmentInfo tSegment;
     ZeroMemory(&tSegment, sizeof(tSegment));
 
-    if(!localMapsfd)
+    if(GetLineSegmentFromName(localMapsfd, modName, tSegment) == false)
+    {
+        close(localMapsfd);
         return 0;
+    }
 
-    GetLineSegmentFromName(localMapsfd, modName, tSegment);
     close(localMapsfd);
 
     return tSegment.start;
@@ -244,59 +271,52 @@ bool ProcessManager::FindExternalSymbol(const char* modName, const char* symbolN
     return symbolFound;
 }
 
-void ProcessManager::memcpy(unsigned char* source, uintptr_t destination, int size)
+bool ProcessManager::WriteMemory(const void* source, uintptr_t destination, int size)
 {
-    for(int i = 0 ; i < size; i++)
-        WriteProcessMemory(destination + i, source[i]);
+    if(lseek64(memfd, destination, SEEK_SET) < 0)
+        return false;
+
+    write(memfd, source, size);
+
+    return  true;
 }
 
-bool ProcessManager::memcpyBackwrd(uintptr_t source, unsigned char* destination, int size)
+bool ProcessManager::ReadMemory(uintptr_t source, void* destination, int size)
 {
-     for(int i = 0 ; i < size; i++)
-        destination[i] = ReadProcessMemory<unsigned char>(source + i);
+    if(lseek64(memfd, source, SEEK_SET) < 0)
+        return false;
+
+    read(memfd, destination, size);
 
     return true;
 }
 
-bool ProcessManager::EnumSegments(std::vector<SegmentInfo> & segments, int prot)
+bool ProcessManager::EnumSegments(std::vector<SegmentInfo> & segments, int protection)
 {
     #ifdef DEBUG
     printf("ProcessManager::EnumSegments(&)\n");
     #endif
 
-    char mask[5];
+    char protectionBuff[] = "---p";
 
-    switch (prot)
-    {
-    case READ:
-        strcpy(mask, "r--p");
-    break;
+    if(protection & PROT_READ)
+        protectionBuff[0] = 'r';
 
-    case READ_WRITE:
-        strcpy(mask, "rw-p");
-    break;
+    if(protection & PROT_WRITE)
+        protectionBuff[1] = 'w';
 
-    case EXECUTE_READ:
-        strcpy(mask, "r-xp");
-    break;
-
-    case EXECUTE_READ_WRITE:
-        strcpy(mask, "rwxp");
-    break;
-
-    default:
-        return false;
-    break;
-    }
+    if(protection & PROT_EXEC)
+        protectionBuff[2] = 'x';
 
     if(ForEachLine(mapsfd, [&](const std::string currLine){
-        if(strstr(currLine.c_str(), mask) == nullptr)
+        if(strstr(currLine.c_str(), protectionBuff) == nullptr)
             return true;
 
-        SegmentInfo currSegment;
+        segments.push_back({});
 
-        ParseMapLineSegment(currLine.c_str(), currSegment);
-        segments.push_back(currSegment);
+        SegmentInfo& segmentInfo = segments[segments.size() - 1];
+
+        ParseMapLineSegment(currLine.c_str(), segmentInfo);
 
         return true;
     }) == false)
@@ -305,22 +325,22 @@ bool ProcessManager::EnumSegments(std::vector<SegmentInfo> & segments, int prot)
     return true;
 }
 
-void ProcessManager::DisablePtrace()
-{
-    #ifdef DEBUG
-    printf("ProcessManager::DisablePtrace()\n");
-    #endif
-    uintptr_t ptraceAddr = ptraceAddr = FindExternalSymbol("libc.so", "ptrace");
+// void ProcessManager::DisablePtrace()
+// {
+//     #ifdef DEBUG
+//     printf("ProcessManager::DisablePtrace()\n");
+//     #endif
+//     uintptr_t ptraceAddr = FindExternalSymbol("libc.so", "ptrace");
 
-    while(!ptraceAddr){
-        printf("ProcessManager : ptrace not found\n");
-        ptraceAddr = FindExternalSymbol("libc.so", "ptrace");
-    };
+//     while(!ptraceAddr){
+//         printf("ProcessManager : ptrace not found\n");
+//         ptraceAddr = FindExternalSymbol("libc.so", "ptrace");
+//     };
 
-    unsigned char buff[] = "\x00\x00\xA0\xE3\x1E\xFF\x2F\xE1"; // mov r0, 0
-                                                               // bx lr
-    memcpy(buff, ptraceAddr, sizeof(buff));
-}
+//     unsigned char buff[] = "\x00\x00\xA0\xE3\x1E\xFF\x2F\xE1"; // mov r0, 0
+//                                                                // bx lr
+//     WriteMemory(buff, ptraceAddr, sizeof(buff));
+// }
 
 uintptr_t ProcessManager::FindCodeCave(uintptr_t size, uintptr_t prot)
 {
@@ -328,36 +348,66 @@ uintptr_t ProcessManager::FindCodeCave(uintptr_t size, uintptr_t prot)
     printf("ProcessManager::FindCodeCave(%08X, %d)\n", size, prot);
     #endif
 
-    std::vector<SegmentInfo> segments;
-    if(!EnumSegments(segments, prot))
-        return 0;
-    
-    size = ((size / 4) + 1) * 4;
-    for(int i = 0; i < segments.size(); i++)
-    {
-        uintptr_t lastMatchIndex = 0;
-        for(uintptr_t currAddr = segments[i].start; currAddr + size < segments[i].end; currAddr += 1 + lastMatchIndex)
-        {
-            if(ReadProcessMemory<unsigned char>(currAddr) == 0x0)
-            {
-                bool found = true;
-                for(int j = 1; j <= size; j++)
-                {
-                    if(ReadProcessMemory<unsigned char>(currAddr + j) != 0x0)
-                    {
-                        found = false;
-                        break;
-                    } else 
-                        lastMatchIndex = j;
-                }
+    int exp = 1;
+    void* tmpBuff = malloc(exp * exp);
 
-                if(found)
-                    return ((currAddr / 4) + 1) * 4;
-            }
-        }
+    if(tmpBuff == nullptr)
+        return 0;
+
+    std::vector<SegmentInfo> segments;
+
+    if(!EnumSegments(segments, prot))
+    {
+        free(tmpBuff);
+        return 0;
+    }
+    
+    size = ((size / 4) + 1) * 4; // Aligning the size
+
+    std::vector<unsigned char> pattern;
+    std::string mask = "";
+
+    for(int i = 0; i < size; i++)
+    {
+        pattern.push_back(0x0);
+        mask.push_back('x');
     }
 
-    return 0;
+    uintptr_t result = 0;
+
+    for(int i = 0; i < segments.size(); i++)
+    {
+        while(exp * exp < segments[i].size)
+        {
+            free(tmpBuff);
+            exp++; tmpBuff = malloc(exp * exp);
+
+            if(tmpBuff == nullptr)
+                return 0;
+        }
+        // At this point we have enought memory to store the entire current segment
+
+        if(ReadMemory(segments[i].start, tmpBuff, segments[i].size) == false)
+            continue;
+
+        // We sucessfully Readed the current segment
+        const char* codeCave = pattern_scan((const char*) pattern.data(), mask.c_str(), (const char*)tmpBuff, segments[i].size );
+        
+        if(codeCave == nullptr)
+            continue;
+
+        // At this point, we have found a codecaves
+        // Lets calculate its position in the remote area
+
+        size_t offset = (uintptr_t)codeCave - (uintptr_t)tmpBuff;
+
+        result = segments[i].start + offset;
+        break;       
+    }
+
+    free(tmpBuff);
+
+    return ((result / 4) + 1) * 4;
 }
 
 bool ProcessManager::Hook(uintptr_t src, uintptr_t dst, uintptr_t size)
@@ -383,7 +433,7 @@ bool ProcessManager::Hook(uintptr_t src, uintptr_t dst, uintptr_t size)
         *(uintptr_t*)(detour + 1) = relativeAddr;
     #endif
 
-    memcpy(detourPtr, src, tSize);
+    WriteMemory(detourPtr, src, tSize);
 
     return true;
 }
@@ -448,7 +498,7 @@ bool ProcessManager::LoadToMemoryAndHook(uintptr_t targetSrc, void* targetDst, u
 
     #endif
 
-    memcpy((unsigned char*)targetDst, DstAddrinTargetMemory, localDstSize);
+    WriteMemory((unsigned char*)targetDst, DstAddrinTargetMemory, localDstSize);
     return Hook(targetSrc, DstAddrinTargetMemory);
 
 }
