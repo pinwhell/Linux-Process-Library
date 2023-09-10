@@ -156,9 +156,10 @@ public:
      * 
      * @param modName the name of the target module
      * @param symbolName the name of the target symbol
-     * @return uintptr_t if not null an address to the symbol in target memory
+     * @param outResult output of the absolute symbol address
+     * @return bool whether it found or not an actual symbol
      */
-    uintptr_t FindExternalSymbol(const char* modName, const char* symbolName);
+    bool FindExternalSymbol(const char* modName, const char* symbolName, uint64_t* outResult = nullptr);
 
     /**
      * @brief it will enumerate/parse all segments from the maps file

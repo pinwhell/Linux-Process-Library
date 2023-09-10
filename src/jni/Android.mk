@@ -4,6 +4,6 @@ LOCAL_ARM_MODE := arm
 LOCAL_LDLIBS := -llog
 LOCAL_ARM_NEON := false
 LOCAL_MODULE := mem
-LOCAL_SRC_FILES := main.cpp ProcessManager.cpp
-LOCAL_CFLAGS :=
+LOCAL_SRC_FILES := main.cpp ProcessManager.cpp ElfUtils.cpp
+LOCAL_CFLAGS := -fexceptions
 include $(BUILD_EXECUTABLE)

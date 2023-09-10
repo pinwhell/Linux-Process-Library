@@ -7,12 +7,13 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "ElfUtils.h"
 
 const unsigned char popmask[] = "\xBD\xE8";
 const unsigned char bxlrmask[] = "\x1E\xFF\x2F\xE1";
 const unsigned char parammask[] = "\xCC\xCC\xCC\xCC";
 
-#define GetBite(buff, pos) (((buff) & (0x1 << (pos)))) ? true : false
+#define GetBit(buff, pos) (((buff) & (0x1 << (pos)))) ? true : false
 
 /**
  * @brief definig DEBUG will cause, all the function logging its call.
@@ -21,12 +22,6 @@ const unsigned char parammask[] = "\xCC\xCC\xCC\xCC";
 #define DEBUG
 
 #define ZeroMemory(dst, size) memset((void*)(dst), 0x0, (size))
-
-void LOG(const char* msg)
-{
-    fprintf(stdout, "%s\n", msg);
-    quick_exit(1);
-}
 
 int ProcessManager::FindPid(const char* procName){
     #ifdef DEBUG
@@ -37,11 +32,12 @@ int ProcessManager::FindPid(const char* procName){
     DIR* dir;
 
     if(!procName)
-        LOG("ProcessManager : not valid process name.\n");
+        return -1;
 
     dir = opendir("/proc/");
+    
     if(!dir)
-        LOG("ProcessManager : cant open proc");
+        return -1;
 
     for(int currPid = 0;(pDirent = readdir(dir)) != NULL;)
     {
@@ -57,9 +53,9 @@ int ProcessManager::FindPid(const char* procName){
 
         char currProcName[128];
 
-        memset(currProcName, NULL, 128);
+        memset(currProcName, 0, sizeof(currProcName));
         
-        if(!read(currcmdLineFd, currProcName ,128))
+        if(!read(currcmdLineFd, currProcName , sizeof(currProcName)))
             continue;
 
         if(!strcmp(currProcName, procName))
@@ -86,90 +82,78 @@ ProcessManager::ProcessManager(const char* procName)
     char ProcessMapsPath[128];
 
     if((pid = FindPid(procName)) == -1)
-        LOG("ProcessManager : Could not found the process");
+        throw("ProcessManager : Could not found the process");
 
     sprintf(ProcessMemoryPath, "/proc/%d/mem", pid);
     memfd = open(ProcessMemoryPath, O_RDWR);
+
+    if(memfd < -1)
+        throw("ProcessManager : Could not open the process memory");
+
     sprintf(ProcessMapsPath, "/proc/%d/maps", pid);
     mapsfd = open(ProcessMapsPath, O_RDONLY);
 
-    if(memfd == -1)
-        LOG("ProcessManager : Could not open process memory");
-
-    if(mapsfd == -1)
-        LOG("ProcessManager : Could not open process maps");
-
-	return;
+    if(mapsfd < -1)
+        throw("ProcessManager : Could not open the process maps");
 }
 
-bool GetMapsBuffer(int fd, std::string & result)
+bool ForEachLine(int fd, std::function<bool(const std::string& line)> callback)
 {
-    #ifdef DEBUG
-    printf("GetMapsBuffer(%d)\n",fd);
-    #endif
+    lseek64(fd, 0, SEEK_SET);
+
+    FILE* currFile = fdopen(fd, "r");
+
+    if(!currFile)
+        return false;
+
+    rewind(currFile);
+
+    char currLine[1024];
+
+    while(fgets(currLine, sizeof(currLine), currFile) != NULL)
+    {
+        if(callback(std::string(currLine)) == false)
+            break;
+    }
 
     lseek64(fd, 0, SEEK_SET);
-    FILE* tmpf = fdopen(fd, "r");
-    if(!tmpf)
-        return false;
-
-    uintptr_t maxLineSize = 2048;
-    char* line = (char*)malloc(maxLineSize);
-    memset(line, 0, maxLineSize);
-    if(!line)
-        return false;
-
-    while(getline(&line, &maxLineSize, tmpf) >= 0)
-        result += std::string(line);
-
-    free(line);
 
     return true;
 }
 
-void ParseMapLineSegment(char* lineStartSegment, SegmentInfo* buff)
+void ParseMapLineSegment(const char* lineStartSegment, SegmentInfo& buff)
 {
     uintptr_t unk1;
-    char* tempName = (char*)malloc(256);
-    char* tempProt = (char*)malloc(256);
+    char tempName[256] {};
+    char tempProt[256] {};
 
-    sscanf(lineStartSegment, "%08X-%08X %s %08X %02X:%02X %d %s\n", &buff->start, &buff->end, tempProt, &unk1, &unk1, &unk1, &unk1, tempName);
+    sscanf(lineStartSegment, "%08X-%08X %s %08X %02X:%02X %d %s\n", &buff.start, &buff.end, tempProt, &unk1, &unk1, &unk1, &unk1, tempName);
     
-    buff->name = std::string(tempName);
-    buff->prot = std::string(tempProt);
-    buff->size = buff->end - buff->start;
+    buff.name = std::string(tempName);
+    buff.prot = std::string(tempProt);
+    buff.size = buff.end - buff.start;
 
-    free(tempProt);
-    free(tempName);
     return;
 }
 
-char* GetStartOfLine(char* minLimit, char* currLinePos)
+bool GetLineSegmentFromName(int fd, const char* modName, SegmentInfo & result)
 {
-    char* result = currLinePos;
+    std::string modMapsLine = "";
 
-    if(currLinePos < minLimit)
-        return minLimit;
+    if(ForEachLine(fd, [&](const std::string& currLine){
+        if(strstr(currLine.c_str(), modName) == nullptr)
+            return true;
 
-    while(*result != '\n' && result > minLimit) result--;
+        modMapsLine = currLine;
 
-    return result;
-}
-
-bool GetLineSegmentFromName(int fd, const char* modName, SegmentInfo * result)
-{
-    std::string fullMaps;
-    char* fullMapsPtr, *targetLine = nullptr;
-
-    if(!GetMapsBuffer(fd, fullMaps))
+        return false;
+    }) == false)
         return false;
 
-    fullMapsPtr = (char*)fullMaps.c_str();     
-    if((targetLine = strstr(fullMapsPtr, modName)) == nullptr)
+    if(modMapsLine.empty())
         return false;
 
-    targetLine = GetStartOfLine(fullMapsPtr, targetLine);
-    ParseMapLineSegment(targetLine, result);
+    ParseMapLineSegment(modMapsLine.c_str(), result);
 
     return true;
 }
@@ -182,7 +166,7 @@ uintptr_t ProcessManager::GetModBaseAddr(const char* modName)
 
     SegmentInfo tSegment;
 
-    if(!GetLineSegmentFromName(mapsfd, modName, &tSegment))
+    if(!GetLineSegmentFromName(mapsfd, modName, tSegment))
         return 0;
 
     return tSegment.start;
@@ -208,13 +192,14 @@ uintptr_t ProcessManager::GetLocalModBaseAddr(const char* modName)
     #endif
 
     int localMapsfd = open("/proc/self/maps", O_RDONLY);
+
     SegmentInfo tSegment;
     ZeroMemory(&tSegment, sizeof(tSegment));
 
     if(!localMapsfd)
         return 0;
 
-    GetLineSegmentFromName(localMapsfd, modName, &tSegment);
+    GetLineSegmentFromName(localMapsfd, modName, tSegment);
     close(localMapsfd);
 
     return tSegment.start;
@@ -228,7 +213,7 @@ bool ProcessManager::GetFullModulePath(const char* modName, std::string & result
 
     SegmentInfo tSegment;
 
-    if(!GetLineSegmentFromName(mapsfd, modName, &tSegment))
+    if(!GetLineSegmentFromName(mapsfd, modName, tSegment))
         return 0;
 
     result = tSegment.name;
@@ -236,50 +221,27 @@ bool ProcessManager::GetFullModulePath(const char* modName, std::string & result
     return true;
 }
 
-uintptr_t ProcessManager::FindExternalSymbol(const char* modName, const char* symbolName)
+bool ProcessManager::FindExternalSymbol(const char* modName, const char* symbolName, uint64_t* outResult)
 {
     #ifdef DEBUG
     printf("ProcessManager::FindExternalSymbol(%s, %s)\n",modName, symbolName);
     #endif
 
-    std::string fullModPath;
-    int modfd;
-    struct stat modstats;
+    std::string fullModPath = "";
 
     if(!GetFullModulePath(modName, fullModPath))
-        return 0;
+        return false;
 
-    modfd = open(fullModPath.c_str(), O_RDONLY);
-    
-    fstat(modfd, &modstats);
-    uintptr_t modBase = (uintptr_t)mmap(NULL,modstats.st_size, PROT_READ, MAP_SHARED, modfd, 0 );
+    bool symbolFound = false;
 
-    Elf32_Ehdr* header = (Elf32_Ehdr*)modBase;
-    Elf32_Shdr* sections = (Elf32_Shdr*)((Elf32_Off)modBase + header->e_shoff);
+    bool libElfEnumRes = ElfOpen(fullModPath, [&](ElfPack libMap){
+         symbolFound = ElfLookupSymbol(libMap, symbolName, outResult); 
+         });
 
-    for(int i = 0; i < header->e_shnum; i++)
-    {
-        if(sections[i].sh_type == SHT_SYMTAB)
-        {
-            uintptr_t stringSectionAddr = modBase + sections[sections[i].sh_link].sh_offset;
-            Elf32_Sym* currSymbolSectionAddr = (Elf32_Sym*)(modBase + sections[i].sh_offset);
-
-            for(int j = 0; j < (sections[i].sh_size / sizeof(Elf32_Sym));  j++)
-            {
-                if(ELF32_ST_BIND(currSymbolSectionAddr[j].st_info) & (STT_FUNC | STB_GLOBAL))
-                {
-                    char* currSymbolName = (char*)(stringSectionAddr + currSymbolSectionAddr[j].st_name);
-                    if(!strcmp(currSymbolName, symbolName)){
-                        return  GetModBaseAddr(modName) + currSymbolSectionAddr[j].st_value;
-                    }
-                }
-            }
-        }
-    }
-
-    close(modfd);
-
-    return 0;
+    if(symbolFound && outResult)
+        (*outResult) += GetModBaseAddr(modName);
+ 
+    return symbolFound;
 }
 
 void ProcessManager::memcpy(unsigned char* source, uintptr_t destination, int size)
@@ -301,10 +263,6 @@ bool ProcessManager::EnumSegments(std::vector<SegmentInfo> & segments, int prot)
     #ifdef DEBUG
     printf("ProcessManager::EnumSegments(&)\n");
     #endif
-
-    std::string fullMaps;
-    if(!GetMapsBuffer(mapsfd, fullMaps))
-        return false;
 
     char mask[5];
 
@@ -330,19 +288,19 @@ bool ProcessManager::EnumSegments(std::vector<SegmentInfo> & segments, int prot)
         return false;
     break;
     }
-    
-    char* fullMapsPtr = (char*)fullMaps.c_str();
-    char* currLinePos = (char*)strstr(fullMapsPtr, (char*)mask);
-    char* lastFoundMask = currLinePos;
-    for(;currLinePos != nullptr;currLinePos = strstr(lastFoundMask, (char*)mask))
-    {
+
+    if(ForEachLine(mapsfd, [&](const std::string currLine){
+        if(strstr(currLine.c_str(), mask) == nullptr)
+            return true;
+
         SegmentInfo currSegment;
 
-        lastFoundMask = currLinePos + 1;
-        currLinePos = GetStartOfLine(fullMapsPtr, currLinePos);
-        ParseMapLineSegment(currLinePos, &currSegment);
+        ParseMapLineSegment(currLine.c_str(), currSegment);
         segments.push_back(currSegment);
-    }
+
+        return true;
+    }) == false)
+        return false;
 
     return true;
 }
@@ -436,7 +394,7 @@ bool RelatedReturn(void* _chunk)
 	if (!memcmp(popmask, (unsigned char*)_chunk + 2, 2))
 	{															
 		int8_t chunk = *(int8_t*)((unsigned char*)_chunk + 1);
-		if(GetBite(chunk, 7))
+		if(GetBit(chunk, 7))
 			found = true;
 	}
 
