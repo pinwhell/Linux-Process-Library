@@ -1,8 +1,8 @@
-#include "ProcessManager.h"
+#include "LinuxProcess.h"
 
 int main()
 {
-    ProcessManager p("com.yourtargetprocess.name");
+    LinuxProcess p("com.yourtargetprocess.name");
 
     return 0;
 }
