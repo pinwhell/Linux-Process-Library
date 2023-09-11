@@ -37,6 +37,17 @@ bool ElfOpen(const std::string& fullModulePath, std::function<void(ElfPack libMa
     return true;
 }
 
+bool ElfPeekIs64(const std::string& fullModulePath, bool& outResult)
+{
+    outResult = false;
+
+    bool elfOpened = ElfOpen(fullModulePath, [&](ElfPack elfPack){
+        outResult = elfPack.header->e_ident[EI_CLASS] == ELFCLASS64;
+    });
+
+    return elfOpened;
+}
+
 Elf32_Shdr* ElfSectionByIndex(ElfPack libMap, unsigned int sectionIdx)
 {
     if((sectionIdx < libMap.header->e_shnum) == false)
@@ -58,7 +69,7 @@ void ElfForEachSection(ElfPack libMap, std::function<bool(Elf32_Shdr* pCurrentSe
     }
 }
 
-Elf32_Shdr* ElfLookupSection(ElfPack libMap, uint32_t sectionType)
+Elf32_Shdr* ElfLookupSectionByType(ElfPack libMap, uint32_t sectionType)
 {
     Elf32_Shdr* secHeader = nullptr;
 
@@ -74,16 +85,60 @@ Elf32_Shdr* ElfLookupSection(ElfPack libMap, uint32_t sectionType)
     return secHeader;
 }
 
+const char* ElfGetSectionHeadersStringBlob(ElfPack libMap)
+{
+    if(libMap.header->e_shstrndx == SHN_UNDEF)
+        return nullptr;
+
+    Elf32_Shdr* shStrSec = ElfSectionByIndex(libMap, libMap.header->e_shstrndx);
+
+    if(shStrSec == nullptr || shStrSec->sh_offset < 1)
+        return nullptr;
+
+    return (const char*)(libMap.base + shStrSec->sh_offset);
+}
+
+const char* ElfGetSectionName(ElfPack libMap, Elf32_Shdr* sectionHdr)
+{
+    const char* shStrBlob = ElfGetSectionHeadersStringBlob(libMap);
+
+    if(shStrBlob == nullptr)
+        return nullptr;
+
+    return shStrBlob + sectionHdr->sh_name;
+}
+
+Elf32_Shdr* ElfLookupSectionByName(ElfPack libMap, const std::string& sectionName)
+{
+    Elf32_Shdr* secHeader = nullptr;
+
+    ElfForEachSection(libMap, [&](Elf32_Shdr* currSection){
+        const char* currSectionName = ElfGetSectionName(libMap, currSection);
+
+        if(currSectionName == nullptr)
+            return true;
+
+        if(strcmp(currSectionName, sectionName.c_str()))
+            return true;
+
+        secHeader = currSection;
+
+        return false;        
+    });
+
+    return secHeader;
+}
+
 Elf32_Shdr* ElfGetSymbolSection(ElfPack libMap)
 {
     Elf32_Shdr* result = nullptr;
     
-    result = ElfLookupSection(libMap, SHT_SYMTAB);
+    result = ElfLookupSectionByType(libMap, SHT_SYMTAB);
 
     if(result)
         return result;
 
-    result = ElfLookupSection(libMap, SHT_DYNSYM);
+    result = ElfLookupSectionByType(libMap, SHT_DYNSYM);
 
     if(result)
         return result;
