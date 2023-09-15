@@ -5,12 +5,6 @@
 #include <vector>
 #include <sys/mman.h>
 
-#define READ 0
-#define READ_WRITE 1
-#define EXECUTE_READ 2
-#define EXECUTE_READ_WRITE 3
-
-
 struct SegmentInfo{
     /**
      * @brief full segment name, if is present
