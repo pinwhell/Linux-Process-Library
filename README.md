@@ -1,29 +1,27 @@
-# Emulator-Android-External-Memory-Hacking
-android process/memory library root
+# Android-External-Root-Memory-Library
 
-Library Features:
+## Library Features
 
-* LoadToMemoryAndHook (will a passed function(should be simple function or shellcode))
-* Hook
-* DisablePtrace
-* GetFuncSizeArm
-* FindCodeCave
-* EnumSegments
-* FindExternalSymbol (parse the elf header and find for symbols)
-* memcpyBackwrd (target to local)
-* memcpy (local to target)
-* GetFullModulePath
-* GetLocalModBaseAddr
-* GetModBaseAddr
-* WriteProcessMemory
-* ReadProcessMemory
-* FindDMAddy
-* FindPid
+- LoadToMemoryAndHook (will a passed function(should be simple function or shellcode))
+- Hook
+- DisablePtrace (Deprecated)
+- GetFuncSizeArm
+- FindCodeCave
+- EnumSegments
+- FindExternalSymbol (Extract it from ELF Format)
+- ReadMemory  (Also Aux Wrapper for Easy Type Reads)
+- WriteMemory (Also Aux Wrapper for Easy Type Writes)
+- GetFullModulePath
+- GetLocalModBaseAddr
+- GetModBaseAddr
+- FindDMAddy (Utility for multilevel Pointers)
+- FindPid
 
-how to build:
+## How To Build
 
-* clone this repo
-* explore src in command line.
-* run ndk-build
+- Clone this repo
+- Explore src in command line.
+- Run ndk-build
 
-inplementation: https://www.youtube.com/watch?v=O4B3t2-67jc&t=7s
+## Demo
+https://www.youtube.com/watch?v=O4B3t2-67jc&t=7s
