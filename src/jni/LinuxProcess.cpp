@@ -487,7 +487,7 @@ bool LinuxProcess::LoadToMemoryAndHook(uintptr_t targetSrc, void* targetDst, uin
         if(!localDstSize)
             return false;
 
-        DstAddrinTargetMemory = FindCodeCave(localDstSize, EXECUTE_READ);
+        DstAddrinTargetMemory = FindCodeCave(localDstSize, PROT_READ);
         if(!DstAddrinTargetMemory)
             return false;
 

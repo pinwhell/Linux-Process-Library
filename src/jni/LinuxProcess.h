@@ -5,6 +5,9 @@
 #include <vector>
 #include <sys/mman.h>
 
+/**
+ * @brief Describes a memory segment (ex. a row from the proc/self/maps)
+*/
 struct SegmentInfo{
     /**
      * @brief full segment name, if is present
@@ -33,6 +36,9 @@ struct SegmentInfo{
     uintptr_t size;
 };
 
+/**
+ * @brief Describes a linux process
+*/
 class LinuxProcess
 {
 private:
@@ -72,7 +78,7 @@ public:
     static int FindPid(const char* procName);
 
     /**
-     * @brief read the memory in target address
+     * @brief read a T item from target address
      * 
      * @tparam T target object type in target memory
      * @param addr it the target address
@@ -91,7 +97,7 @@ public:
     uintptr_t FindDMAddy(uintptr_t base, std::vector<uintptr_t> offsets);
 
     /**
-     * @brief write the memory in target address
+     * @brief write a T item to given addr in target memory
      * 
      * @tparam T target object type to be writed in target process memory
      * @param addr target address in process target memory
